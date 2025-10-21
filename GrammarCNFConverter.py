@@ -74,104 +74,287 @@ class GrammarCNFConverter:
 
         print("Iniciando conversión a CNF...")
 
+        # Paso 0: Eliminar producciones epsilon (vacías)
+        print("Paso 1: Eliminando producciones epsilon...")
+        self._eliminar_producciones_epsilon()
+
         # Paso 1: Quitar producciones unitarias (A -> B)
+        print("Paso 2: Eliminando producciones unitarias...")
         self._eliminar_producciones_unitarias()
 
-        # Paso 2: Quitar símbolos que no sirven
-        self._eliminar_simbolos_inutiles()
-
-        # Paso 3: Arreglar terminales que están mezclados con no terminales
+        # Paso 2: Arreglar terminales que están mezclados con no terminales
+        print("Paso 3: Manejando terminales...")
         self._manejar_terminales()
 
-        # Paso 4: Partir producciones largas (más de 2 símbolos)
+        # Paso 3: Partir producciones largas (más de 2 símbolos)
+        print("Paso 4: Descomponiendo producciones largas...")
         self._descomponer_producciones_largas()
+
+        # Paso 4: Eliminar símbolos inútiles AL FINAL (después de toda la conversión)
+        print("Paso 5: Eliminando símbolos inútiles...")
+        self._eliminar_simbolos_inutiles()
 
         print("Conversión completada exitosamente")
         return self.gramatica
 
     def _eliminar_producciones_unitarias(self):
-        """Elimina producciones de la forma A -> B donde B es no terminal."""
-        sigue_cambiando = True
+        """
+        Elimina producciones unitarias de la forma A -> B donde B es no terminal.
+        Usa clausura transitiva para manejar cadenas de producciones unitarias.
+        """
+        # Encontrar todas las parejas unitarias (A, B) donde A ->* B
+        pares_unitarios = {}
 
-        while sigue_cambiando:
-            sigue_cambiando = False
-            nueva_gramatica = self._copiar_gramatica(self.gramatica)
+        # Inicializar: cada no terminal alcanza a sí mismo
+        for nt in self.gramatica:
+            pares_unitarios[nt] = {nt}
 
-            for nt, producciones in self.gramatica.items():
-                for prod in producciones:
+        # Encontrar todas las producciones unitarias directas
+        for nt, producciones in self.gramatica.items():
+            for prod in producciones:
+                partes = prod.split()
+                # Si es unitaria (un solo símbolo no terminal)
+                if len(partes) == 1 and not self._es_terminal(partes[0]):
+                    if partes[0] in self.gramatica:
+                        pares_unitarios[nt].add(partes[0])
+
+        # Calcular clausura transitiva
+        cambio = True
+        while cambio:
+            cambio = False
+            for nt in self.gramatica:
+                tamaño_anterior = len(pares_unitarios[nt])
+                # Si A ->* B y B ->* C, entonces A ->* C
+                nuevos = set()
+                for alcanzable in pares_unitarios[nt]:
+                    if alcanzable in pares_unitarios:
+                        nuevos.update(pares_unitarios[alcanzable])
+                pares_unitarios[nt].update(nuevos)
+                if len(pares_unitarios[nt]) > tamaño_anterior:
+                    cambio = True
+
+        # Construir nueva gramática sin producciones unitarias
+        nueva_gramatica = {}
+
+        for nt in self.gramatica:
+            nuevas_prods = set()
+
+            # Para cada no terminal B alcanzable desde A
+            for alcanzable in pares_unitarios[nt]:
+                if alcanzable not in self.gramatica:
+                    continue
+
+                # Agregar todas las producciones NO unitarias de B
+                for prod in self.gramatica[alcanzable]:
                     partes = prod.split()
 
-                    # Si es producción unitaria (un solo no terminal)
-                    if len(partes) == 1 and not self._es_terminal(partes[0]):
-                        nt_referenciado = partes[0]
+                    # Solo agregar si NO es unitaria
+                    if not (len(partes) == 1 and not self._es_terminal(partes[0])):
+                        nuevas_prods.add(prod)
 
-                        # Reemplazar con las producciones del no terminal referenciado
-                        if nt_referenciado in self.gramatica:
-                            for nueva_prod in self.gramatica[nt_referenciado]:
-                                if nueva_prod not in nueva_gramatica[nt]:
-                                    nueva_gramatica[nt].append(nueva_prod)
-                                    sigue_cambiando = True
+            if nuevas_prods:
+                nueva_gramatica[nt] = list(nuevas_prods)
 
-                        # Quitar la producción unitaria
-                        if prod in nueva_gramatica[nt]:
-                            nueva_gramatica[nt].remove(prod)
+        self.gramatica = nueva_gramatica
 
-            self.gramatica = nueva_gramatica
-
-    def _eliminar_simbolos_inutiles(self):
-        """Elimina símbolos que no generan nada o no se pueden alcanzar."""
-        # Primero encontrar cuáles símbolos pueden generar terminales
-        generativos = set()
+    def _eliminar_producciones_epsilon(self):
+        """
+        Elimina producciones epsilon (vacías) de la gramática.
+        Genera todas las combinaciones necesarias para compensar la eliminación.
+        """
+        # Paso 1: Encontrar todos los símbolos anulables (que pueden derivar en epsilon)
+        anulables = set()
         cambio = True
 
         while cambio:
             cambio = False
             for nt, producciones in self.gramatica.items():
-                if nt in generativos:
+                if nt in anulables:
+                    continue
+
+                for prod in producciones:
+                    prod_limpio = prod.strip()
+
+                    # Si la producción es explícitamente epsilon
+                    if prod_limpio == '' or prod_limpio == 'e' or prod_limpio == 'epsilon':
+                        anulables.add(nt)
+                        cambio = True
+                        break
+
+                    # Si todos los símbolos de la producción son anulables
+                    simbolos = prod.split()
+                    if simbolos and all(s in anulables for s in simbolos):
+                        anulables.add(nt)
+                        cambio = True
+                        break
+
+        # Si no hay símbolos anulables, no hay nada que hacer
+        if not anulables:
+            return
+
+        # Paso 2: Construir nueva gramática sin epsilon
+        nueva_gramatica = {}
+
+        for nt, producciones in self.gramatica.items():
+            nuevas_prods = set()
+
+            for prod in producciones:
+                prod_limpio = prod.strip()
+
+                # Saltar producciones epsilon explícitas
+                if prod_limpio == '' or prod_limpio == 'e' or prod_limpio == 'epsilon':
+                    continue
+
+                simbolos = prod.split()
+                if not simbolos:
+                    continue
+
+                # Generar todas las combinaciones quitando símbolos anulables
+                combinaciones = self._generar_combinaciones(simbolos, anulables)
+                nuevas_prods.update(combinaciones)
+
+            # Solo agregar si hay producciones
+            if nuevas_prods:
+                nueva_gramatica[nt] = list(nuevas_prods)
+
+        self.gramatica = nueva_gramatica
+
+    def _generar_combinaciones(self, simbolos, anulables):
+        """
+        Genera todas las combinaciones posibles de una producción
+        considerando que algunos símbolos pueden ser anulables.
+
+        Por ejemplo: si tenemos A B C donde B es anulable,
+        generamos: A B C, A C
+        """
+        if not simbolos:
+            return set()
+
+        combinaciones = set()
+
+        # Usamos un enfoque de máscara de bits
+        # Para n símbolos, hay 2^n combinaciones posibles
+        n = len(simbolos)
+
+        for mascara in range(1, 2 ** n):  # Empezamos en 1 para evitar la cadena vacía
+            combinacion = []
+
+            for i in range(n):
+                # Si el bit i está activado en la máscara
+                if mascara & (1 << i):
+                    combinacion.append(simbolos[i])
+                else:
+                    # Solo omitimos el símbolo si es anulable
+                    if simbolos[i] not in anulables:
+                        combinacion.append(simbolos[i])
+
+            if combinacion:  # Solo agregamos si la combinación no está vacía
+                combinaciones.add(' '.join(combinacion))
+
+        return combinaciones
+
+    def _eliminar_simbolos_inutiles(self):
+        """
+        Elimina símbolos que no son productivos o no son alcanzables.
+        Se ejecuta AL FINAL de la conversión cuando la gramática ya está más limpia.
+        """
+        if not self.gramatica:
+            return
+
+        # Determinar símbolo inicial (puede no ser 'S')
+        simbolo_inicial = 'S'
+        if 'S' not in self.gramatica and self.gramatica:
+            simbolo_inicial = list(self.gramatica.keys())[0]
+
+        # PASO 1: Encontrar símbolos PRODUCTIVOS (que pueden derivar en terminales)
+        productivos = set()
+        cambio = True
+
+        while cambio:
+            cambio = False
+            for nt, producciones in self.gramatica.items():
+                if nt in productivos:
                     continue
 
                 for prod in producciones:
                     simbolos = prod.split()
-                    # Si todos los símbolos son terminales o ya son generativos
-                    if all(self._es_terminal(s) or s in generativos for s in simbolos):
-                        generativos.add(nt)
+                    if not simbolos:
+                        continue
+
+                    # Un no terminal es productivo si:
+                    # - Tiene una producción que solo contiene terminales
+                    # - O tiene una producción donde todos los no terminales son productivos
+                    todos_productivos = True
+                    for s in simbolos:
+                        if not self._es_terminal(s) and s not in productivos:
+                            todos_productivos = False
+                            break
+
+                    if todos_productivos:
+                        productivos.add(nt)
                         cambio = True
                         break
 
-        # Quedarse solo con símbolos generativos
-        gram_temp = {}
+        # Verificar que el símbolo inicial sea productivo
+        if simbolo_inicial not in productivos:
+            print(
+                f"  Advertencia: El símbolo inicial '{simbolo_inicial}' no es productivo. Eliminando símbolos no productivos...")
+
+        # Filtrar producciones manteniendo solo las que usan símbolos productivos
+        gram_productivos = {}
         for nt, producciones in self.gramatica.items():
-            if nt in generativos:
-                prods_validas = []
-                for prod in producciones:
-                    simbolos = prod.split()
-                    if all(self._es_terminal(s) or s in generativos for s in simbolos):
-                        prods_validas.append(prod)
-                if prods_validas:
-                    gram_temp[nt] = prods_validas
+            if nt not in productivos:
+                continue
 
-        self.gramatica = gram_temp
+            prods_validas = []
+            for prod in producciones:
+                simbolos = prod.split()
+                if not simbolos:
+                    continue
 
-        # Ahora encontrar símbolos alcanzables desde S
+                # Mantener producción si todos sus símbolos son productivos o terminales
+                if all(self._es_terminal(s) or s in productivos for s in simbolos):
+                    prods_validas.append(prod)
+
+            if prods_validas:
+                gram_productivos[nt] = prods_validas
+
+        if not gram_productivos:
+            print("  Advertencia: Filtrado de productivos resultó vacío. Manteniendo gramática.")
+            return
+
+        self.gramatica = gram_productivos
+
+        # PASO 2: Encontrar símbolos ALCANZABLES desde S
         alcanzables = {'S'}
         cambio = True
 
         while cambio:
             cambio = False
-            for nt in list(alcanzables):
+            nuevos_alcanzables = set()
+
+            for nt in alcanzables:
                 if nt not in self.gramatica:
                     continue
+
                 for prod in self.gramatica[nt]:
                     for simbolo in prod.split():
-                        if not self._es_terminal(simbolo) and simbolo not in alcanzables:
-                            alcanzables.add(simbolo)
-                            cambio = True
+                        if not self._es_terminal(simbolo):
+                            if simbolo not in alcanzables:
+                                nuevos_alcanzables.add(simbolo)
+                                cambio = True
 
-        # Quedarse solo con alcanzables
+            alcanzables.update(nuevos_alcanzables)
+
+        # Filtrar manteniendo solo símbolos alcanzables
         gram_final = {}
         for nt, producciones in self.gramatica.items():
             if nt in alcanzables:
                 gram_final[nt] = producciones
+
+        if not gram_final or 'S' not in gram_final:
+            print("  Advertencia: Filtrado de alcanzables resultó vacío. Manteniendo gramática anterior.")
+            return
 
         self.gramatica = gram_final
 
@@ -302,8 +485,85 @@ class GrammarCNFConverter:
         return reporte
 
 
+def leer_gramatica_desde_archivo(nombre_archivo):
+    """
+    Lee una gramática desde un archivo de texto.
+
+    Formato esperado:
+        E -> T X
+        X -> + T X | e
+        T -> F Y
+        ...
+
+    Parametros:
+        nombre_archivo: Ruta al archivo con la gramática
+
+    Retorna:
+        dict: Diccionario con la gramática parseada
+    """
+    gramatica = {}
+
+    try:
+        with open(nombre_archivo, 'r', encoding='utf-8') as archivo:
+            lineas = archivo.readlines()
+
+        for linea in lineas:
+            linea = linea.strip()
+
+            # Ignorar líneas vacías o comentarios
+            if not linea or linea.startswith('#'):
+                continue
+
+            # Separar por ->
+            if '->' not in linea:
+                continue
+
+            partes = linea.split('->')
+            if len(partes) != 2:
+                continue
+
+            no_terminal = partes[0].strip()
+            producciones_str = partes[1].strip()
+
+            # Separar producciones por |
+            producciones = [p.strip() for p in producciones_str.split('|')]
+
+            # MANTENER epsilon como está (no filtrar aquí, el conversor lo manejará)
+            # Solo filtrar producciones completamente vacías
+            producciones = [p for p in producciones if p]
+
+            if no_terminal in gramatica:
+                gramatica[no_terminal].extend(producciones)
+            else:
+                gramatica[no_terminal] = producciones
+
+        # Verificar que haya al menos una producción
+        if not gramatica:
+            raise ValueError("El archivo no contiene producciones válidas")
+
+        # Si no hay símbolo inicial 'S', usar el primer no terminal como S
+        if 'S' not in gramatica and gramatica:
+            primer_nt = list(gramatica.keys())[0]
+            print(f"Advertencia: No se encontró símbolo inicial 'S', usando '{primer_nt}' como inicial")
+
+        return gramatica
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"No se encontró el archivo: {nombre_archivo}")
+    except Exception as e:
+        raise Exception(f"Error al leer la gramática: {str(e)}")
+
+
 def crear_gramatica_proyecto():
     """Crea la gramática del proyecto según las especificaciones."""
+    gramatica = {
+        'E':['T X'],
+        'X':['+ T X','e'],
+        'T':['F Y'],
+        'Y': ['* F Y', 'e'],
+        'F': ['( E )', 'id'],
+    }
+    """
     gramatica = {
         'S': ['NP VP'],
         'VP': ['VP PP', 'V NP', 'cooks', 'drinks', 'eats', 'cuts'],
@@ -315,16 +575,30 @@ def crear_gramatica_proyecto():
               'fork', 'knife', 'oven', 'spoon'],
         'Det': ['a', 'the']
     }
+    """
     return gramatica
 
 
 # Probar el conversor
 if __name__ == "__main__":
-    gram_original = crear_gramatica_proyecto()
+    import sys
 
     print("=== CONVERSOR A FORMA NORMAL DE CHOMSKY ===")
-    print("\nGramática Original:")
 
+    # Permitir especificar archivo desde línea de comandos
+    if len(sys.argv) > 1:
+        archivo_gramatica = sys.argv[1]
+        print(f"\nLeyendo gramática desde: {archivo_gramatica}")
+        try:
+            gram_original = leer_gramatica_desde_archivo(archivo_gramatica)
+        except Exception as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+    else:
+        print("\nUsando gramática del proyecto por defecto")
+        gram_original = crear_gramatica_proyecto()
+
+    print("\nGramática Original:")
     conversor = GrammarCNFConverter(gram_original)
     conversor.imprimir_gramatica(gram_original)
 

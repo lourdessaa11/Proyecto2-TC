@@ -1,4 +1,4 @@
-from GrammarCNFConverter import GrammarCNFConverter, crear_gramatica_proyecto
+from GrammarCNFConverter import GrammarCNFConverter, crear_gramatica_proyecto, leer_gramatica_desde_archivo
 from CYKParser import CYKParser
 import os
 
@@ -8,25 +8,34 @@ def mostrar_menu():
     print("\n" + "=" * 50)
     print("  ANALIZADOR SINTACTICO CYK")
     print("=" * 50)
-    print("\n1. Ver gramatica original")
-    print("2. Ver gramatica en CNF")
+    print("\n1. Ver gramática original")
+    print("2. Ver gramática en CNF")
     print("3. Analizar una frase")
     print("4. Analizar frases desde archivo")
-    print("5. Salir")
+    print("5. Cargar nueva gramática desde archivo")
+    print("6. Salir")
     print("-" * 50)
 
 
 def ver_gramatica_original(conversor):
-    """Muestra la gramatica original."""
-    print("\n--- Gramatica Original ---")
+    """Muestra la gramática original."""
+    print("\n--- Gramática Original ---")
     conversor.imprimir_gramatica(conversor.gramatica_original)
     input("\nPresione Enter para continuar...")
 
 
 def ver_gramatica_cnf(conversor):
-    """Muestra la gramatica en CNF."""
-    print("\n--- Gramatica en CNF ---")
+    """Muestra la gramática en CNF."""
+    print("\n--- Gramática en CNF ---")
     conversor.imprimir_gramatica(conversor.gramatica)
+
+    # Mostrar reporte
+    reporte = conversor.obtener_reporte()
+    print(f"\n=== ESTADÍSTICAS ===")
+    print(f"Reglas originales: {reporte['reglas_originales']}")
+    print(f"Reglas en CNF: {reporte['reglas_cnf']}")
+    print(f"No terminales nuevos: {reporte['no_terminales_nuevos']}")
+
     input("\nPresione Enter para continuar...")
 
 
@@ -37,6 +46,7 @@ def analizar_una_frase(parser):
 
     if not frase:
         print("Error: Debe ingresar una frase")
+        input("\nPresione Enter para continuar...")
         return
 
     print(f"\nFrase: {frase}")
@@ -51,7 +61,7 @@ def analizar_una_frase(parser):
     else:
         print("Resultado: NO")
 
-    # Salida 2: Tiempo de ejecucion
+    # Salida 2: Tiempo de ejecución
     print(f"Tiempo: {tiempo:.6f} segundos")
 
     # Salida 3: Parse tree
@@ -60,7 +70,7 @@ def analizar_una_frase(parser):
         print("\nParse Tree:")
         parser.imprimir_arbol(arbol)
     else:
-        print("\nParse Tree: No disponible (frase invalida)")
+        print("\nParse Tree: No disponible (frase inválida)")
 
     input("\nPresione Enter para continuar...")
 
@@ -98,7 +108,7 @@ def analizar_desde_archivo(parser):
             else:
                 print("Resultado: NO")
 
-            # Salida 2: Tiempo de ejecucion
+            # Salida 2: Tiempo de ejecución
             print(f"Tiempo: {tiempo:.6f} segundos")
 
             # Salida 3: Parse tree
@@ -107,7 +117,7 @@ def analizar_desde_archivo(parser):
                 print("\nParse Tree:")
                 parser.imprimir_arbol(arbol)
             else:
-                print("\nParse Tree: No disponible (frase invalida)")
+                print("\nParse Tree: No disponible (frase inválida)")
 
             print("-" * 50)
 
@@ -118,17 +128,86 @@ def analizar_desde_archivo(parser):
         input("\nPresione Enter para continuar...")
 
 
-def inicializar():
-    """Inicializa la gramatica y el parser."""
+def cargar_nueva_gramatica():
+    """Carga una nueva gramática desde un archivo."""
+    print("\n--- Cargar Nueva Gramática ---")
+    print("\nFormato esperado del archivo:")
+    print("  E -> T X")
+    print("  X -> + T X | e")
+    print("  T -> F Y")
+    print("  ...")
+    print("\nNotas:")
+    print("  - Use '->' para separar no terminal de producciones")
+    print("  - Use '|' para separar múltiples producciones")
+    print("  - Líneas vacías y que empiecen con '#' serán ignoradas")
+
+    nombre_archivo = input("\nIngrese el nombre del archivo: ").strip()
+
+    if not os.path.exists(nombre_archivo):
+        print(f"Error: El archivo '{nombre_archivo}' no existe")
+        input("\nPresione Enter para continuar...")
+        return None, None
+
+    try:
+        print("\nCargando gramática...")
+        gram = leer_gramatica_desde_archivo(nombre_archivo)
+
+        print("\nGramática cargada exitosamente:")
+        print(f"  - {len(gram)} no terminales")
+        print(f"  - {sum(len(prods) for prods in gram.values())} producciones")
+
+        # Crear conversor
+        conversor = GrammarCNFConverter(gram)
+
+        # Mostrar gramática original
+        print("\n--- Gramática Cargada ---")
+        conversor.imprimir_gramatica(gram)
+
+        # Convertir a CNF
+        print("\nConvirtiendo a CNF...")
+        if not conversor.verificar_cnf():
+            gram_cnf = conversor.convertir_a_cnf()
+            print("\n--- Gramática en CNF ---")
+            conversor.imprimir_gramatica(gram_cnf)
+        else:
+            gram_cnf = conversor.gramatica
+            print("\nLa gramática ya está en CNF")
+
+        # Crear parser
+        parser = CYKParser(gram_cnf)
+
+        print("\n✓ Gramática cargada y lista para usar")
+        input("\nPresione Enter para continuar...")
+
+        return conversor, parser
+
+    except Exception as e:
+        print(f"\nError al cargar la gramática: {e}")
+        input("\nPresione Enter para continuar...")
+        return None, None
+
+
+def inicializar(usar_gramatica_proyecto=True):
+    """
+    Inicializa la gramática y el parser.
+
+    Parametros:
+        usar_gramatica_proyecto: Si True, usa la gramática del proyecto por defecto
+    """
     print("\nInicializando sistema...")
 
-    # Cargar gramatica
-    gram = crear_gramatica_proyecto()
-    conversor = GrammarCNFConverter(gram)
+    if usar_gramatica_proyecto:
+        # Cargar gramática del proyecto
+        gram = crear_gramatica_proyecto()
+        conversor = GrammarCNFConverter(gram)
+        print("Usando gramática del proyecto por defecto")
+    else:
+        print("Modo: Cargar gramática personalizada al inicio")
+        return None, None
 
     # Convertir a CNF si es necesario
     if not conversor.verificar_cnf():
-        print("Convirtiendo gramatica a CNF...")
+        print("Convirtiendo gramática a CNF...")
         gram_cnf = conversor.convertir_a_cnf()
     else:
         gram_cnf = conversor.gramatica
@@ -142,19 +221,30 @@ def inicializar():
 
 
 def main():
-    """Funcion principal."""
+    """Función principal."""
     print("\n" + "=" * 50)
     print("  PROYECTO 2 - ALGORITMO CYK")
-    print("  Teoria de la Computacion")
+    print("  Teoría de la Computación")
     print("=" * 50)
 
-    # Inicializar sistema
-    conversor, parser = inicializar()
+    # Preguntar si quiere cargar gramática personalizada o usar la del proyecto
+    print("\n¿Qué gramática desea usar?")
+    print("1. Gramática del proyecto (por defecto)")
+    print("2. Cargar gramática desde archivo")
+    opcion_inicial = input("Seleccione una opción (1-2): ").strip()
 
-    # Menu principal
+    if opcion_inicial == '2':
+        conversor, parser = cargar_nueva_gramatica()
+        if conversor is None or parser is None:
+            print("\nNo se pudo cargar la gramática. Usando gramática del proyecto.")
+            conversor, parser = inicializar(usar_gramatica_proyecto=True)
+    else:
+        conversor, parser = inicializar(usar_gramatica_proyecto=True)
+
+    # Menú principal
     while True:
         mostrar_menu()
-        opcion = input("Seleccione una opcion: ").strip()
+        opcion = input("Seleccione una opción: ").strip()
 
         if opcion == '1':
             ver_gramatica_original(conversor)
@@ -165,10 +255,16 @@ def main():
         elif opcion == '4':
             analizar_desde_archivo(parser)
         elif opcion == '5':
+            nueva_conversor, nuevo_parser = cargar_nueva_gramatica()
+            if nueva_conversor is not None and nuevo_parser is not None:
+                conversor = nueva_conversor
+                parser = nuevo_parser
+                print("\n✓ Gramática actualizada exitosamente")
+        elif opcion == '6':
             print("\nSaliendo del programa...\n")
             break
         else:
-            print("\nOpcion no valida")
+            print("\nOpción no válida")
 
 
 if __name__ == "__main__":
