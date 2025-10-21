@@ -71,9 +71,9 @@ def analizar_frase(parser):
 
     es_valida, tiempo, tabla = parser.analizar(frase)
     if es_valida:
-        print("\n✓ VALIDA - Pertenece al lenguaje")
+        print("\nVALIDA - Pertenece al lenguaje")
     else:
-        print("\n✗ INVALIDA - No pertenece al lenguaje")
+        print("\nINVALIDA - No pertenece al lenguaje")
     print(f"Tiempo: {tiempo:.6f} segundos")
 
     # Mostrar tabla para frases cortas
@@ -81,10 +81,16 @@ def analizar_frase(parser):
         parser.mostrar_tabla(frase)
 
     # Intentar un arbol (opcional)
-    arbol = parser.reconstruir_arbol(frase)
-    if arbol:
-        print("\nÁrbol de Parsing:")
-        parser.imprimir_arbol(arbol)
+    if es_valida:
+        arbol = parser.reconstruir_arbol(frase)
+        print("\nParse tree:")
+        if arbol:
+            parser.imprimir_arbol(arbol)
+        else:
+            print("(no existe)")
+    else:
+        print("\nParse tree:")
+        print("(no existe)")
 
     input("\nPresione Enter para continuar...")
 
